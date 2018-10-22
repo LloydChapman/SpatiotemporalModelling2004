@@ -50,4 +50,4 @@ ylabel('Proportion LST+')
 saveas(gcf,'LSTAgePrev')
 saveas(gcf,'LSTAgePrev.eps','epsc')
 
-save('LSTCatModelOutput','pars','L','a','prevLpos','aa','p')
+save('LSTCatModelOutput','pars','CI','a','prevLpos','aa','p')

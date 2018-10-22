@@ -29,8 +29,8 @@ elseif nargin==6
     plot(h.BinEdges,pdf(prior,h.BinEdges,a,b),'g','LineWidth',1.5)
 elseif nargin==7
     a=varargin{1};
-    b=varargin{1};
-    c=varargin{1};
+    b=varargin{2};
+    c=varargin{3};
     plot(h.BinEdges,pdf(prior,h.BinEdges,a,b,c),'g','LineWidth',1.5)
 end
 axis([min(h.BinEdges) max(h.BinEdges) 0 1.05*y])
