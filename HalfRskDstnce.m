@@ -12,5 +12,4 @@ elseif strcmp(typ,'Cauchy')
 elseif strcmp(typ,'Exp')
     d_half=alpha.*log(-beta.*K0./(log((1+exp(-(beta.*K0+delta+epsilon)))/2)+epsilon));
 end
-d_half(any(imag(d_half),2))=NaN;
-d_half(d_half<0)=0;
+d_half(imag(d_half)~=0|d_half<0)=0;
