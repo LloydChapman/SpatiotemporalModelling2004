@@ -141,7 +141,7 @@ tBI(intersect(I,B))=tB(intersect(I,B));
 for i=1:nI
     % loop until infection time is after month 1 or birth month if
     % individual was born during study
-    while tE(I(i))<max(1,tBI(I(i))+1) % can only be infected at least 1 month after birth
+    while tE(I(i))<max(1,tBI(I(i))) % can only be infected after birth
         tE(I(i))=tI(I(i))-(nbinrnd(r1,p10)+1);
     end
 end
@@ -300,7 +300,8 @@ j3=(i1|i2);
 % j=find(data.Para==i);
 % K(j,setdiff(1:n,j))=0;
 % end
-d0=double(d==0); % indicator matrix of individuals living in the same HHs
+[~,~,ib]=unique(data.HHID); % HH indices of individuals
+d0=bsxfun(@eq,ib,ib'); % indicator matrix of individuals living in the same HHs
 d0(1:n+1:end)=0; % set diagonal (same individual) entries to 0
 rate=beta0*K+delta0*d0; % calculate transmission rate, adding within-HH contribution
 lambda=rate(:,I)*h(I,:)+epsilon0; % infectious pressure
@@ -326,7 +327,7 @@ pold=[beta0,alpha0,epsilon0,delta0]; % set old parameter values
 plb=zeros(1,np); % lower limits for parameters
 pub=Inf(1,np); % upper limits for parameters
 p1new=p10; % initial p1 value
-LLold=logL(S,lambda,tEm,IPold(I),r1,p10); % initial log-likelihood
+[LLold,LL1old,LL2old,LL3old]=logL(S,lambda,tEm,IPold(I),r1,p10); % initial log-likelihood
 
 % Matrices and vectors for saving parameter and log-likelihood values
 p=zeros(niters,np); % matrix for saving parameter values
@@ -370,37 +371,35 @@ acc_rate_R=0;
 nbins=50;
 scrnsz=get(0,'ScreenSize');
 
+%% MCMC LOOP
 for k=1:niters
     %% UPDATE TRANSMISSION PARAMETERS USING ADAPTIVE RANDOM WALK METROPOLIS-HASTINGS    
     if k<=100 || rand<0.05
         pnew(u)=mvnrnd(pold(u),0.1^2*ppvar0(u,u)/nu);
-        while any(pnew(u)<=plb(u)) || any(pnew(u)>=pub(u)) % resample if outside parameter range
-            pnew(u)=mvnrnd(pold(u),0.1^2*ppvar0(u,u)/nu);
-        end
     else
         pnew(u)=mvnrnd(pold(u),2.38^2*ppvar(u,u)/nu);
-        while any(pnew(u)<=plb(u)) || any(pnew(u)>=pub(u)) % resample if outside parameter range
-            pnew(u)=mvnrnd(pold(u),2.38^2*ppvar(u,u)/nu);
-        end
     end
     
-    % Calculate ratio of prior probabilities for new and old value
-    q=log(prod(exppdf(pnew(u),prior_mean(u))))-log(prod(exppdf(pold(u),prior_mean(u))));
-    [K,K0new]=KnlSprtParas(d,pnew(2),typ,n,i1,i2,i3,j1,j2,j3); % update distance kernel
-    rate_new=pnew(1)*K+pnew(4)*d0; % update rate
-    lambda_new=rate_new(:,I)*h(I,:)+pnew(3); % update whole infectious pressure
-    
-    [LLnew,LL1,LL2,LL3]=logL(S,lambda_new,tEm,IPold(I),r1,p1new); % calculate log-likelihood
-    
-    log_ap=LLnew-LLold+q; % calculate Metropolis-Hastings acceptance probability
-    
-    if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
-        pold=pnew; % keep updated parameter values
-        lambda=lambda_new; rate=rate_new; K0old=K0new; LLold=LLnew; % keep updated info
-        acc_p=acc_p+1; % add to acceptance
-    else
-        lambda_new=lambda; % revert lambda_new to old value as only part of lambda_new is updated in infection time updates below
-        rej_p=rej_p+1; % add to rejection
+    if all(pnew(u)>plb(u) & pnew(u)<pub(u)) % calculate log-likelihood if prior probability is non-zero
+        q=sum(log(exppdf(pnew(u),prior_mean(u)))-log(exppdf(pold(u),prior_mean(u)))); % calculate ratio of prior probabilities for new and old value
+        [K,K0new]=KnlSprtParas(d,pnew(2),typ,n,i1,i2,i3,j1,j2,j3); % update distance kernel
+        rate_new=pnew(1)*K+pnew(4)*d0; % update rate
+        lambda_new=rate_new(:,I)*h(I,:)+pnew(3); % update whole infectious pressure
+        
+        [LLnew,LL1new,LL2new,LL3new]=logL(S,lambda_new,tEm,IPold(I),r1,p1new); % calculate log-likelihood
+        
+        log_ap=LLnew-LLold+q; % calculate Metropolis-Hastings acceptance probability
+        
+        if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
+            pold=pnew; % keep updated parameter values
+            lambda=lambda_new; rate=rate_new; K0old=K0new; LLold=LLnew; LL1old=LL1new; LL2old=LL2new; LL3old=LL3new; % keep updated info
+            acc_p=acc_p+1; % add to acceptance
+        else
+            lambda_new=lambda; % revert lambda_new to old value as only part of lambda_new is updated in infection time updates below
+            rej_p=rej_p+1; % add to rejection
+        end
+    else % otherwise reject immediately
+        rej_p=rej_p+1;
     end
     
     %% GIBBS UPDATE SUCCESS PROBABILITY PARAMETER FOR ASYMPTOMATIC INFECTION PERIOD DISTRIBUTION
@@ -409,37 +408,40 @@ for k=1:niters
     %% UPDATE INFECTION TIMES    
     for i=1:size(pick,1)
         j=pick(i,k); % get index of infection time to update
-        tEnew(j)=0; % set infection time as before start date initially
-        while tEnew(j)<max(1,tBI(j)+1) % can only be infected at least 1 month after birth
-            tEnew(j)=tI(j)-(nbinrnd(r1,p1new)+1); % sample from negative binomial distribution
-        end
-        tEj=tE(j);
-        tEjnew=tEnew(j);
-        IPnew(j)=tI(j)-tEjnew; % new incubation period
-        q=log(nbinpdf(IPold(j)-1,r1,p1new))-log(nbinpdf(IPnew(j)-1,r1,p1new)); % proposal ratio for infection time update
-       
-        tEmnew(j,tEj)=0; % remove old infection time
-        tEmnew(j,tEjnew)=1; % add new infection time
-        Snew(j,tEjnew:tEj-1)=0; % remove old susceptible times if new infection time is earlier (from month indvdl is infctd up to but not incl. month before old infection time)
-        Snew(j,tEj:tEjnew-1)=1; % add new susceptible times if new infection time is later (up to but not incl. month indvdl is infctd)
+        tEnew(j)=tI(j)-(nbinrnd(r1,p1new)+1); % sample from negative binomial distribution
         
-        hnew(j,tEj:tEjnew-1)=0; % remove old infectiousness if new infection time is later
-        hnew(j,tEjnew:tEj-1)=h0; % add infectiousness if new infection time is earlier
-        erlrE=min(tEj,tEjnew); % index of column for earlier infctn time between old and new infection time
-        ltrE=max(tEj,tEjnew); % index of column for later infctn time between old and new infection time
-        lambda_new(:,erlrE:ltrE-1)=rate(:,I)*hnew(I,erlrE:ltrE-1)+pold(3); % update infectious pressure
-        
-        [LLnew,LL1,LL2,LL3]=logL(Snew,lambda_new,tEmnew,IPnew(I),r1,p1new); % calculate log-likelihood
-        
-        log_ap=LLnew-LLold+q; % calculate Metropolis-Hastings acceptance probability
-        
-        if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
-            IPold(j)=IPnew(j); tE(j)=tEnew(j); S(j,:)=Snew(j,:); tEm(j,:)=tEmnew(j,:);
-            h(j,:)=hnew(j,:); lambda(:,erlrE:ltrE-1)=lambda_new(:,erlrE:ltrE-1); LLold=LLnew; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
-            acc_E=acc_E+1;
-        else
-            IPnew(j)=IPold(j); tEnew(j)=tE(j); Snew(j,:)=S(j,:); tEmnew(j,:)=tEm(j,:);
-            hnew(j,:)=h(j,:); lambda_new(:,erlrE:ltrE-1)=lambda(:,erlrE:ltrE-1); % keep old values, don't change log-likelihood
+        if tEnew(j)>=max(1,tBI(j)) % calculate likelihood if new infection time is after start of study or birth
+            tEj=tE(j);
+            tEjnew=tEnew(j);
+            IPnew(j)=tI(j)-tEjnew; % new incubation period
+            q=log(nbinpdf(IPold(j)-1,r1,p1new))-log(nbinpdf(IPnew(j)-1,r1,p1new)); % proposal ratio for infection time update
+            
+            tEmnew(j,tEj)=0; % remove old infection time
+            tEmnew(j,tEjnew)=1; % add new infection time
+            Snew(j,tEjnew:tEj-1)=0; % remove old susceptible times if new infection time is earlier (from month indvdl is infctd up to but not incl. month before old infection time)
+            Snew(j,tEj:tEjnew-1)=1; % add new susceptible times if new infection time is later (up to but not incl. month indvdl is infctd)
+            
+            hnew(j,tEj:tEjnew-1)=0; % remove old infectiousness if new infection time is later
+            hnew(j,tEjnew:tEj-1)=h0; % add infectiousness if new infection time is earlier
+            erlrE=min(tEj,tEjnew); % index of column for earlier infctn time between old and new infection time
+            ltrE=max(tEj,tEjnew); % index of column for later infctn time between old and new infection time
+            lambda_new(:,erlrE:ltrE-1)=rate(:,I)*hnew(I,erlrE:ltrE-1)+pold(3); % update infectious pressure
+            
+            [LLnew,LL1new,LL2new,LL3new]=logL(Snew,lambda_new,tEmnew,IPnew(I),r1,p1new); % calculate log-likelihood
+            
+            log_ap=LLnew-LLold+q; % calculate Metropolis-Hastings acceptance probability
+            
+            if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
+                IPold(j)=IPnew(j); tE(j)=tEnew(j); S(j,:)=Snew(j,:); tEm(j,:)=tEmnew(j,:);
+                h(j,:)=hnew(j,:); lambda(:,erlrE:ltrE-1)=lambda_new(:,erlrE:ltrE-1); LLold=LLnew; LL1old=LL1new; LL2old=LL2new; LL3old=LL3new; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
+                acc_E=acc_E+1;
+            else
+                IPnew(j)=IPold(j); tEnew(j)=tE(j); Snew(j,:)=S(j,:); tEmnew(j,:)=tEm(j,:);
+                hnew(j,:)=h(j,:); lambda_new(:,erlrE:ltrE-1)=lambda(:,erlrE:ltrE-1); % keep old values, don't change log-likelihood
+                rej_E=rej_E+1;
+            end
+        else % otherwise reject immediately
+            tEnew(j)=tE(j);
             rej_E=rej_E+1;
         end
     end
@@ -447,28 +449,31 @@ for k=1:niters
     %% UPDATE MISSING ONSET TIMES
     for i=1:nNO
         j=NO(i);
-        tInew(j)=0;     
-        while tInew(j)<=tE(j) || tInew(j)<tIlb(j) || tInew(j)>tIub(j) || tInew(j)>=tD(j)
-            tInew(j)=tR(j)-(nbinrnd(r0,p0)+1);
-        end
-        tIj=tI(j);
-        tIjnew=tInew(j);
-        IPnew(j)=tIjnew-tE(j); % new incubation period
-        hnew(j,tIj:tIjnew-1)=h0; % reduce infectiousness up to new onset time if it is later
-        hnew(j,tIjnew:tIj-1)=1; % increase infectiousness from new onset time if it is earlier
-        erlrI=min(tIj,tIjnew); % index of column for earlier onset time between old and new onset time
-        ltrI=max(tIj,tIjnew); % index of column for later onset time between old and new onset time
-        lambda_new(:,erlrI:ltrI-1)=rate(:,I)*hnew(I,erlrI:ltrI-1)+pold(3); % update infectious pressure
+        tInew(j)=tR(j)-(nbinrnd(r0,p0)+1); 
         
-        [LLnew,LL1,LL2,LL3]=logL(S,lambda_new,tEm,IPnew(I),r1,p1new); % calculate log-likelihood
-        
-        log_ap=LLnew-LLold; % calculate Metropolis-Hastings acceptance probability
-
-        if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
-            IPold(j)=IPnew(j); tI(j)=tInew(j); h(j,:)=hnew(j,:); lambda(:,erlrI:ltrI-1)=lambda_new(:,erlrI:ltrI-1); LLold=LLnew; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
-            acc_I=acc_I+1;
-        else
-            IPnew(j)=IPold(j); tInew(j)=tI(j); hnew(j,:)=h(j,:); lambda_new(:,erlrI:ltrI-1)=lambda(:,erlrI:ltrI-1); % keep old values, don't change log-likelihood
+        if tInew(j)>tE(j) && tInew(j)>=tIlb(j) && tInew(j)<=tIub(j) && tInew(j)<tD(j) % calculate likelihood if new onset time is after infection time, within infection time bounds, and before death
+            tIj=tI(j);
+            tIjnew=tInew(j);
+            IPnew(j)=tIjnew-tE(j); % new incubation period
+            hnew(j,tIj:tIjnew-1)=h0; % reduce infectiousness up to new onset time if it is later
+            hnew(j,tIjnew:tIj-1)=1; % increase infectiousness from new onset time if it is earlier
+            erlrI=min(tIj,tIjnew); % index of column for earlier onset time between old and new onset time
+            ltrI=max(tIj,tIjnew); % index of column for later onset time between old and new onset time
+            lambda_new(:,erlrI:ltrI-1)=rate(:,I)*hnew(I,erlrI:ltrI-1)+pold(3); % update infectious pressure
+            
+            [LLnew,LL1new,LL2new,LL3new]=logL(S,lambda_new,tEm,IPnew(I),r1,p1new); % calculate log-likelihood
+            
+            log_ap=LLnew-LLold; % calculate Metropolis-Hastings acceptance probability
+            
+            if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
+                IPold(j)=IPnew(j); tI(j)=tInew(j); h(j,:)=hnew(j,:); lambda(:,erlrI:ltrI-1)=lambda_new(:,erlrI:ltrI-1); LLold=LLnew; LL1old=LL1new; LL2old=LL2new; LL3old=LL3new; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
+                acc_I=acc_I+1;
+            else
+                IPnew(j)=IPold(j); tInew(j)=tI(j); hnew(j,:)=h(j,:); lambda_new(:,erlrI:ltrI-1)=lambda(:,erlrI:ltrI-1); % keep old values, don't change log-likelihood
+                rej_I=rej_I+1;
+            end
+        else % otherwise reject immediately
+            tInew(j)=tI(j);
             rej_I=rej_I+1;
         end
     end
@@ -476,22 +481,24 @@ for k=1:niters
     %% MOVE WHOLE INFECTION-TO-TREATMENT PERIOD
     for i=1:nNONR
         j=NONR(i);
-        tmp=0;
-        % if onset and death in same year and maximum symptom period 
+        tmp=0; % set tmp to 0 initially
+        while tmp==0 % resample until tmp is non-zero
+            tmp=round(sqrt(ERvar)*randn);
+        end
+        tEnew(j)=tE(j)+tmp;
+        tInew(j)=tI(j)+tmp;
+        tRnew(j)=tR(j)+tmp;
+            
+        % if onset and death in same year and maximum symptom period
         % currently chosen, or infection is at start of study/birth time
-        % and onset/recovery time are as late as they can be, do nothing as
+        % and onset/recovery time are as late as they can be,
         % infection-to-treatment period cannot be moved
-        if ~(tI(j)==tIlb(j) && tR(j)==tD(j)) && ~(tE(j)==max(1,tBI(j)+1) && (tI(j)==min(tIub(j),tD(j)-1) || tR(j)==tD(j))) % only propose infection-treatment block move if a move is possible
-            % resample until different onset time (in onset year and before
-            % death month) and treatment time (before death month) are chosen;
-            % allow treatment month to be same as death month as many cases
-            % were said to have died during treatment
-            while tmp==0 || tInew(j)<tIlb(j) || tInew(j)>tIub(j) || tInew(j)>=tD(j) || tEnew(j)<max(1,tBI(j)+1) || tRnew(j)>min(tD(j),tmax)
-                tmp=round(sqrt(ERvar)*randn);
-                tEnew(j)=tE(j)+tmp;
-                tInew(j)=tI(j)+tmp;
-                tRnew(j)=tR(j)+tmp;
-            end
+        if ~(tI(j)==tIlb(j) && tR(j)==tD(j)) && ~(tE(j)==max(1,tBI(j)+1) && (tI(j)==min(tIub(j),tD(j)-1) || tR(j)==tD(j))) && tInew(j)>=tIlb(j) && tInew(j)<=tIub(j) && tInew(j)<tD(j) && tEnew(j)>=max(1,tBI(j)) && tRnew(j)<=min(tD(j),tmax)
+            % calculate likelihood if an infection-treatment block move is
+            % possible and different onset time (in onset year and before
+            % death month) and treatment time (before death month) are chosen
+            % (tmp~=0); allow treatment month to be same as death month as
+            % many cases were said to have died during treatment
             tEj=tE(j);
             tEjnew=tEnew(j);
             tEmnew(j,tEj)=0; % remove old infection time
@@ -519,47 +526,53 @@ for k=1:niters
             ltrR=max(tRj,tRjnew); % index of column for later treatment time between old and new treatment time
             
             lambda_new(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1])=rate(:,I)*hnew(I,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1])+pold(3); % update infectious pressure
-
-            [LLnew,LL1,LL2,LL3]=logL(Snew,lambda_new,tEmnew,IPold(I),r1,p1new); % calculate log-likelihood
+            
+            [LLnew,LL1new,LL2new,LL3new]=logL(Snew,lambda_new,tEmnew,IPold(I),r1,p1new); % calculate log-likelihood
             
             log_ap=LLnew-LLold; % calculate Metropolis-Hastings acceptance probability
             
             if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
                 tE(j)=tEnew(j); S(j,:)=Snew(j,:); tEm(j,:)=tEmnew(j,:); tI(j)=tInew(j); tR(j)=tRnew(j);
-                h(j,:)=hnew(j,:); lambda(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1])=lambda_new(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1]); LLold=LLnew; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
+                h(j,:)=hnew(j,:); lambda(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1])=lambda_new(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1]); LLold=LLnew; LL1old=LL1new; LL2old=LL2new; LL3old=LL3new; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
                 acc_ERmove=acc_ERmove+1;
             else
                 tEnew(j)=tE(j); Snew(j,:)=S(j,:); tEmnew(j,:)=tEm(j,:); tInew(j)=tI(j); tRnew(j)=tR(j);
                 hnew(j,:)=h(j,:); lambda_new(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1])=lambda(:,[erlrE:ltrE-1,erlrI:ltrI-1,erlrR:ltrR-1]); % keep old values, don't change log-likelihood
                 rej_ERmove=rej_ERmove+1;
             end
+        else % otherwise reject immediately
+            tEnew(j)=tE(j); tInew(j)=tI(j); tRnew(j)=tR(j);
+            rej_ERmove=rej_ERmove+1;
         end
     end
     
     %% UPDATE MISSING TREATMENT TIMES
     for i=1:nONR
         j=ONR(i);
-        tRnew(j)=NaN;       
-        while isnan(tRnew(j)) || tRnew(j)>min(tD(j),tmax)
-            tRnew(j)=tI(j)+nbinrnd(r0,p0)+1;
-        end
-        tRj=tR(j);
-        tRjnew=tRnew(j);
-        hnew(j,tRj:tRjnew-1)=1; % increase infectiousness up to new treatment time if it is later
-        hnew(j,tRjnew:tRj-1)=0; % reduce infectiousness from new treatment time if it is later
-        erlrR=min(tRj,tRjnew); % index of column for earlier treatment time between old and new treatment time
-        ltrR=max(tRj,tRjnew); % index of column for later treatment time between old and new treatment time
-        lambda_new(:,erlrR:ltrR-1)=rate(:,I)*hnew(I,erlrR:ltrR-1)+pold(3); % update infectious pressure
-
-        [LLnew,LL1,LL2,LL3]=logL(S,lambda_new,tEm,IPold(I),r1,p1new); % calculate log-likelihood
+        tRnew(j)=tI(j)+nbinrnd(r0,p0)+1;
         
-        log_ap=LLnew-LLold; % calculate Metropolis-Hastings acceptance value
-
-        if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
-            tR(j)=tRnew(j); h(j,:)=hnew(j,:); lambda(:,erlrR:ltrR-1)=lambda_new(:,erlrR:ltrR-1); LLold=LLnew; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
-            acc_R=acc_R+1;
-        else
-            tRnew(j)=tR(j); hnew(j,:)=h(j,:); lambda_new(:,erlrR:ltrR-1)=lambda(:,erlrR:ltrR-1); % keep old values, don't change log-likelihood
+        if tRnew(j)<=min(tD(j),tmax) % calculate likelihood if new recovery time is before death or end of study
+            tRj=tR(j);
+            tRjnew=tRnew(j);
+            hnew(j,tRj:tRjnew-1)=1; % increase infectiousness up to new treatment time if it is later
+            hnew(j,tRjnew:tRj-1)=0; % reduce infectiousness from new treatment time if it is later
+            erlrR=min(tRj,tRjnew); % index of column for earlier treatment time between old and new treatment time
+            ltrR=max(tRj,tRjnew); % index of column for later treatment time between old and new treatment time
+            lambda_new(:,erlrR:ltrR-1)=rate(:,I)*hnew(I,erlrR:ltrR-1)+pold(3); % update infectious pressure
+            
+            [LLnew,LL1new,LL2new,LL3new]=logL(S,lambda_new,tEm,IPold(I),r1,p1new); % calculate log-likelihood
+            
+            log_ap=LLnew-LLold; % calculate Metropolis-Hastings acceptance value
+            
+            if log_ap > log(rand) % for acc_prob<=1, change if greater than rand
+                tR(j)=tRnew(j); h(j,:)=hnew(j,:); lambda(:,erlrR:ltrR-1)=lambda_new(:,erlrR:ltrR-1); LLold=LLnew; LL1old=LL1new; LL2old=LL2new; LL3old=LL3new; % keep updated info, overwrite old log-likelihood for step k with new log-likelihood
+                acc_R=acc_R+1;
+            else
+                tRnew(j)=tR(j); hnew(j,:)=h(j,:); lambda_new(:,erlrR:ltrR-1)=lambda(:,erlrR:ltrR-1); % keep old values, don't change log-likelihood
+                rej_R=rej_R+1;
+            end
+        else % otherwise reject immediately
+            tRnew(j)=tR(j); 
             rej_R=rej_R+1;
         end
     end
@@ -570,7 +583,7 @@ for k=1:niters
     p1(k)=p1new;
     K0(k)=K0old;
     LL(k)=LLold;
-    terms(k,:)=[LL1,LL2,LL3];   
+    terms(k,:)=[LL1old,LL2old,LL3old];   
     IPs(:,k)=IPold(I);
     tEs(:,k)=tE(I);
     tIsNONR(:,k)=tI(NONR);
