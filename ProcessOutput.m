@@ -105,11 +105,15 @@ end
 if doPlots
     mode_tE=zeros(nI,1);
     nplot=20;
+    tEc=NaN(nI,niters);
+    for j=1:niters
+        tEc(ismember(I,pick(:,j)),j)=tEs(ismember(I,pick(:,j)),j);
+    end    
     % Cases with both onset and treatment times
     for i=1:nplot
         j=find(I==OR(i));
         figure;
-        mode_tE(j)=PlotInfctnTimePstrDistn(tEs(j,z),tI(OR(i)),r1,p10,j);
+        mode_tE(j)=PlotInfctnTimePstrDistn(tEc(j,z),tI(OR(i)),r1,p10,j);
         saveas2(gcf,['E' num2str(j) rslts],savePlots)
         saveas2(gcf,['E' num2str(j) rslts '.eps'],savePlots,'epsc')
     end
@@ -118,9 +122,9 @@ if doPlots
     for i=1:nplot
         j=find(I==NONR(i));
         figure;
-        histogram(tEs(j,z),'Normalization','pdf'); hold on
-        histogram(tIsNONR(i,z),'Normalization','pdf');
-        histogram(tRsNONR(i,z),'Normalization','pdf')
+        histogram(tEs(j,z),'Normalization','pdf','BinMethod','integers'); hold on
+        histogram(tIsNONR(i,z),'Normalization','pdf','BinMethod','integers');
+        histogram(tRsNONR(i,z),'Normalization','pdf','BinMethod','integers')
         set(gca,'FontSize',16);
         xlabel('t (months)','FontSize',16)
         ylabel('Density','FontSize',16)
@@ -135,8 +139,8 @@ if doPlots
     for i=1:nRNO
         j=find(I==RNO(i));
         figure;
-        histogram(tEs(j,z),'Normalization','pdf'); hold on
-        histogram(tIsRNO(i,z),'Normalization','pdf');
+        histogram(tEs(j,z),'Normalization','pdf','BinMethod','integers'); hold on
+        histogram(tIsRNO(i,z),'Normalization','pdf','BinMethod','integers');
         set(gca,'FontSize',16);
         xlabel('t (months)','FontSize',16)
         ylabel('Density','FontSize',16)

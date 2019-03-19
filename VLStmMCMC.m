@@ -434,7 +434,7 @@ for k=1:niters
         j=NO(i);
         tInew(j)=tR(j)-(nbinrnd(r0,p0)+1); 
         
-        if tInew(j)>tE(j) && tInew(j)>=tIlb(j) && tInew(j)<=tIub(j) && tInew(j)<tD(j) % calculate likelihood if new onset time is after infection time, within infection time bounds, and before death
+        if tInew(j)>tE(j) && tInew(j)>=tIlb(j) && tInew(j)<=tIub(j) && tInew(j)<min(tD(j),tmax) % calculate likelihood if new onset time is after infection time, within infection time bounds, and before death
             tIj=tI(j);
             tIjnew=tInew(j);
             IPnew(j)=tIjnew-tE(j); % new incubation period
@@ -476,7 +476,7 @@ for k=1:niters
         % currently chosen, or infection is at start of study/birth time
         % and onset/recovery time are as late as they can be,
         % infection-to-treatment period cannot be moved
-        if ~(tI(j)==tIlb(j) && tR(j)==tD(j)) && ~(tE(j)==max(1,tBI(j)+1) && (tI(j)==min(tIub(j),tD(j)-1) || tR(j)==tD(j))) && tInew(j)>=tIlb(j) && tInew(j)<=tIub(j) && tInew(j)<tD(j) && tEnew(j)>=max(1,tBI(j)) && tRnew(j)<=min(tD(j),tmax)
+        if ~(tI(j)==tIlb(j) && tR(j)==tD(j)) && ~(tE(j)==max(1,tBI(j)) && (tI(j)==min(tIub(j),tD(j)-1) || tR(j)==tD(j))) && tInew(j)>=tIlb(j) && tInew(j)<=tIub(j) && tInew(j)<min(tD(j),tmax) && tEnew(j)>=max(1,tBI(j)) && tRnew(j)<=min(tD(j),tmax)
             % calculate likelihood if an infection-treatment block move is
             % possible and different onset time (in onset year and before
             % death month) and treatment time (before death month) are chosen

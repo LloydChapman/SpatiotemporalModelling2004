@@ -1,5 +1,5 @@
 function [M,h]=PlotInfctnTimePstrDistn(tE,tI,r,p,idx)
-h=histogram(tE,'Normalization','probability','BinMethod','integers'); hold on
+h=histogram(tE(~isnan(tE)),'Normalization','probability','BinMethod','integers'); hold on
 % Find mode
 BinCentres=(h.BinEdges(1:end-1)+h.BinEdges(2:end))/2;
 [y,i]=max(h.Values);
