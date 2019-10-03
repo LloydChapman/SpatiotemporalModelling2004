@@ -326,6 +326,7 @@ tRsONR=zeros(nONR,niters);
 
 % Initialise new status and infectiousness matrices
 pnew=pold;
+lambda_new=lambda;
 tEnew=tE;
 tInew=tI;
 tRnew=tR;

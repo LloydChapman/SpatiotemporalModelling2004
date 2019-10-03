@@ -7,7 +7,7 @@ for j=1:np
     plot(z1,[mode_p(j) mode_p(j)],'-m',z1,[HPDI(j,1) HPDI(j,1)],'r-',z1,[HPDI(j,2) HPDI(j,2)],'r-');
     axis([z1 -Inf Inf]);
     xlabel('Iteration')
-    if ismember(pname,{'beta','alpha','epsilon','delta'})
+    if ismember(pname{j},{'beta','alpha','epsilon','delta'})
         ylabel(['\' pname{j}],'FontSize',13,'Rot',0)       
     else
         ylabel(['$$' pname{j} '$$'],'FontSize',13,'Rot',0,'Interpreter','latex')
