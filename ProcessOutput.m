@@ -178,22 +178,13 @@ mean_IP=mean(r1*(1-p1(zthin))./p1(zthin))+1;
 figure;
 [mode_IP,HPDI_IP]=PlotPstrDistn(r1*(1-p1(zthin))./p1(zthin)+1,'IPD',50);
 
-% Make matrix of IPs that are updated in each MCMC step
-IPc=NaN(size(pick));
-for j=1:size(pick,2)
-    if exist('IPs','var')
-        IPc(:,j)=IPs(ismember(I,pick(:,j)),j);
-    else
-        IPc(:,j)=IPm(ismember(I,pick(:,j)),j);
-    end
-end
 % Calculate vector of mean IPs for MCMC samples
-mean_IPc=mean(IPc,1);
+mean_IPs=mean(IPs,1);
 % Plot auto-correlation fn for mean incubation period
 figure;
-acf(mean_IPc(z)',min(200,numel(z)-1));
+acf(mean_IPs(z)',min(200,numel(z)-1));
 title('mean IP')
 
 % Plot correlation between mean incubation period and p1
-figure; plot(p1(z),mean_IPc(z),'.')
+figure; plot(p1(z),mean_IPs(z),'.')
 xlabel('p'); ylabel('mean IP')
